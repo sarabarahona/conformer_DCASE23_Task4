@@ -15,11 +15,13 @@ from local.utils import (
 from desed_task.dataio import ConcatDatasetBatchSampler
 from desed_task.dataio.datasets import StronglyAnnotatedSet, UnlabeledSet, WeakSet
 from desed_task.nnet.CRNN import CRNN
+from desed_task.nnet.attention_models import AttModel
 from desed_task.utils.encoder import ManyHotEncoder
 from desed_task.utils.schedulers import ExponentialWarmup
 
 from local.classes_dict import classes_labels
 from local.sed_trainer import SEDTask4
+from local.sed_trainer_att import SEDTask4_att
 from local.resample_folder import resample_folder
 from local.utils import generate_tsv_wav_durations
 
@@ -115,7 +117,15 @@ def single_run(
     test_dataset = devtest_dataset
 
     ##### model definition  ############
-    sed_student = CRNN(**config["net"])
+    if config["model"] == "CRNN":
+        sed_student = CRNN(**config["net"])
+        trainerTask = SEDTask4
+    else:
+        sed_student = AttModel(n_class=config["model"]["nclass"], 
+                            cnn_kwargs=config["model"]["cnn"], 
+                            encoder_kwargs=config["model"]["encoder"],
+                            cnn_type=config["model"]["cnn_type"],)
+        trainerTask = SEDTask4_att
 
     # calulate multiply–accumulate operation (MACs) 
     macs, _ = calculate_macs(sed_student, config) 
@@ -241,7 +251,7 @@ def single_run(
         logger = True
         callbacks = None
 
-    desed_training = SEDTask4(
+    desed_training = trainerTask(
         config,
         encoder=encoder,
         sed_student=sed_student,
@@ -384,7 +394,8 @@ def prepare_run(argv=None):
         configs["training"]["batch_size_val"] = 1
 
     test_only = test_from_checkpoint is not None
-    resample_data_generate_durations(configs["data"], test_only, evaluation)
+    if configs["resample"]:
+        resample_data_generate_durations(configs["data"], test_only, evaluation)
     return configs, args, test_model_state_dict, evaluation
 
 if __name__ == "__main__":

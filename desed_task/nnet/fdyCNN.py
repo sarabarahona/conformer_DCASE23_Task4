@@ -68,7 +68,7 @@ class CNN(nn.Module):
                 cnn.add_module("dropout{0}".format(i), nn.Dropout(dropout))
 
         batch_norm = True
-        # 128x862x64
+
         for i in range(len(nb_filters)):
             conv(i, batch_norm, conv_dropout, activ=activation)
             cnn.add_module("pooling{0}".format(i), nn.AvgPool2d(pooling[i]))  # bs x tframe x mels

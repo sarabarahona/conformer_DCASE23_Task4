@@ -588,6 +588,8 @@ class SEDTask4_att(pl.LightningModule):
                     self.val_buffer_student_synth[0.5], self.hparams["data"]["synth_val_tsv"],
                 )[0]
                 synth_metric = synth_student_event_macro
+                self.log("val/synth/student/event_f1_macro", synth_student_event_macro)
+
             elif obj_metric_synth_type == "intersection":
                 intersection_f1_macro_student = compute_per_intersection_macro_f1(
                     self.val_buffer_student_synth,
@@ -595,6 +597,7 @@ class SEDTask4_att(pl.LightningModule):
                     self.hparams["data"]["synth_val_dur"],
                 )
                 synth_metric = intersection_f1_macro_student
+                self.log("val/synth/student/intersection_f1_macro", intersection_f1_macro_student)
             elif obj_metric_synth_type == "psds1":
                 synth_metric = psds1_student_sed_scores_eval
             elif obj_metric_synth_type == "psds2":
@@ -604,6 +607,9 @@ class SEDTask4_att(pl.LightningModule):
                     f"obj_metric_synth_type: {obj_metric_synth_type} not implemented."
                 )
             weak_metric = weak_student_f1_macro.item()
+            self.log("val/weak/student/macro_F1", weak_student_f1_macro)
+            self.log("val/synth/student/psds1_sed_scores_eval", psds1_student_sed_scores_eval)
+           
         elif model_selection == "teacher":
             if obj_metric_synth_type is None:
                 synth_metric = psds1_teacher_sed_scores_eval
@@ -612,6 +618,8 @@ class SEDTask4_att(pl.LightningModule):
                     self.val_buffer_teacher_synth[0.5], self.hparams["data"]["synth_val_tsv"],
                 )[0]
                 synth_metric = synth_teacher_event_macro
+                self.log("val/synth/teacher/event_f1_macro", synth_teacher_event_macro)
+
             elif obj_metric_synth_type == "intersection":
                 intersection_f1_macro_teacher = compute_per_intersection_macro_f1(
                     self.val_buffer_teacher_synth,
@@ -619,8 +627,10 @@ class SEDTask4_att(pl.LightningModule):
                     self.hparams["data"]["synth_val_dur"],
                 )
                 synth_metric = intersection_f1_macro_teacher
+                self.log("val/synth/teacher/intersection_f1_macro", intersection_f1_macro_teacher)
             elif obj_metric_synth_type == "psds1":
                 synth_metric = psds1_teacher_sed_scores_eval
+                
             elif obj_metric_synth_type == "psds2":
                 synth_metric = psds2_teacher_sed_scores_eval
             else:
@@ -628,6 +638,9 @@ class SEDTask4_att(pl.LightningModule):
                     f"obj_metric_synth_type: {obj_metric_synth_type} not implemented."
                 )
             weak_metric = weak_teacher_f1_macro.item()
+            self.log("val/weak/teacher/macro_F1", weak_teacher_f1_macro)
+            self.log("val/synth/teacher/psds1_sed_scores_eval", psds1_teacher_sed_scores_eval)
+        
         else:
             raise NotImplementedError(
                     f"model_selection: {model_selection} not implemented."
@@ -640,18 +653,7 @@ class SEDTask4_att(pl.LightningModule):
 
  
         self.log("val/obj_metric", obj_metric, prog_bar=True)
-        self.log("val/weak/student/macro_F1", weak_student_f1_macro)
-        self.log("val/weak/teacher/macro_F1", weak_teacher_f1_macro)
-        self.log("val/synth/student/psds1_sed_scores_eval", psds1_student_sed_scores_eval)
-        self.log(
-            "val/synth/student/intersection_f1_macro", intersection_f1_macro_student
-        )
-        self.log(
-            "val/synth/teacher/intersection_f1_macro", intersection_f1_macro_teacher
-        )
-        self.log("val/synth/student/event_f1_macro", synth_student_event_macro)
-        self.log("val/synth/teacher/event_f1_macro", synth_teacher_event_macro)
-
+        
         # free the buffers
         self.val_buffer_student_synth = {
             k: pd.DataFrame() for k in self.hparams["training"]["val_thresholds"]

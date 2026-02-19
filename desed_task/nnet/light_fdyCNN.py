@@ -49,122 +49,6 @@ class BiGRU(nn.Module):
         x, _ = self.rnn(x)
         return x
 
-
-########################################################################################################################
-#                                                        DYconv                                                        #
-########################################################################################################################
-
-
-class Dynamic_conv2d(nn.Module):
-    def __init__(self, in_planes, out_planes, kernel_size, stride=1, padding=0, bias=False, n_basis_kernels=4,
-                 temperature=31, reduction=4, pool_dim='freq'):
-        super(Dynamic_conv2d, self).__init__()
-
-        self.in_planes = in_planes
-        self.out_planes = out_planes
-        self.kernel_size = kernel_size
-        self.stride = stride
-        self.padding = padding
-        self.pool_dim = pool_dim
-
-        self.n_basis_kernels = n_basis_kernels
-        self.attention = attention2d(in_planes, kernel_size, stride, n_basis_kernels, temperature, reduction, pool_dim)
-
-        self.weight = nn.Parameter(torch.randn(n_basis_kernels, out_planes, in_planes,
-                                               self.kernel_size, self.kernel_size),
-                                   requires_grad=True)
-        if bias:
-            self.bias = nn.Parameter(torch.Tensor(n_basis_kernels, out_planes), requires_grad=True)
-        else:
-            self.bias = None
-
-        for i in range(self.n_basis_kernels):
-            nn.init.kaiming_normal_(self.weight[i])
-
-    def forward(self, x):                                           # x size : [bs, in_chan, frames, freqs]
-        attention = self.attention(x)                               # attention size : [bs, n_ker, 1, 1, freqs]
-
-        aggregate_weight = self.weight.view(-1, self.in_planes, self.kernel_size, self.kernel_size)
-                                                                    # weight size : [n_ker * out_chan, in_chan, ks, ks]
-
-        if self.bias is not None:
-            aggregate_bias = self.bias.view(-1)
-            output = F.conv2d(x, weight=aggregate_weight, bias=aggregate_bias, stride=self.stride, padding=self.padding)
-        else:
-            output = F.conv2d(x, weight=aggregate_weight, bias=None, stride=self.stride, padding=self.padding)
-                                                                    # output size : [bs, n_ker * out_chan, frames, freqs]
-
-        output = output.view(x.size(0), self.n_basis_kernels, self.out_planes, output.size(-2), output.size(-1))
-                                                                   # output size : [bs, n_ker, out_chan, frames, freqs]
-
-        if self.pool_dim in ['freq']:
-            assert attention.shape[-2] == output.shape[-2]
-        elif self.pool_dim in ['time']:
-            assert attention.shape[-1] == output.shape[-1]
-
-        output = torch.sum(output * attention, dim=1)               # output size : [bs, out_chan, frames, freqs]
-
-        return output
-
-
-class attention2d(nn.Module):
-    def __init__(self, in_planes, kernel_size, stride, n_basis_kernels, temperature, reduction, pool_dim):
-        super(attention2d, self).__init__()
-        self.pool_dim = pool_dim
-        self.temperature = temperature
-
-
-        hidden_planes = in_planes // reduction
-        if hidden_planes < 4:
-            hidden_planes = 4
-
-        padding = int((kernel_size- 1) / 2)
-        if pool_dim == 'both':
-            self.fc1 = nn.Linear(in_planes, hidden_planes)
-            self.relu = nn.ReLU(inplace=True)
-            self.fc2 = nn.Linear(hidden_planes, n_basis_kernels)
-        else:
-            self.conv1d1 = nn.Conv1d(in_planes, hidden_planes, kernel_size, stride=stride, padding=padding, bias=False)
-            self.bn = nn.BatchNorm1d(hidden_planes)
-            self.relu = nn.ReLU(inplace=True)
-            self.conv1d2 = nn.Conv1d(hidden_planes, n_basis_kernels, 1, bias=True)
-
-            # initialize
-            for m in self.modules():
-                if isinstance(m, nn.Conv1d):
-                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                    if m.bias is not None:
-                        nn.init.constant_(m.bias, 0)
-                if isinstance(m, nn.BatchNorm1d):
-                    nn.init.constant_(m.weight, 1)
-                    nn.init.constant_(m.bias, 0)
-
-
-    def forward(self, x):                                            # x size : [bs, chan, frames, freqs]
-        ### Pool dimensions and apply pre-processings
-        if self.pool_dim == 'freq':                               #TDY
-            x = torch.mean(x, dim=3)                                 # x size : [bs, chan, frames]
-        elif self.pool_dim in ['time']: #FDY
-            x = torch.mean(x, dim=2)                             # x size : [bs, chan, freqs]
-        elif self.pool_dim == 'both':                           #DY
-            # x = torch.mean(torch.mean(x, dim=2), dim=1)          #x size : [bs, chan]
-            x = F.adaptive_avg_pool2d(x, (1, 1)).squeeze(-1).squeeze(-1)
-
-        ### extract attention weights
-        if  self.pool_dim == 'both':
-            x = self.relu(self.fc1(x))                                             #x size : [bs, sqzd_chan]
-            att = self.fc2(x).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)            #att size : [bs, n_ker, 1, 1, 1]
-        elif self.pool_dim == 'freq':
-            x = self.relu(self.bn(self.conv1d1(x)))                                #x size : [bs, sqzd_chan, frames]
-            att = self.conv1d2(x).unsqueeze(2).unsqueeze(4)                        #x size : [bs, n_ker, 1, frames, 1]
-        else:  #self.pool_dim == 'time', FDY
-            x = self.relu(self.bn(self.conv1d1(x)))                                #x size : [bs, sqzd_chan, freqs]
-            att = self.conv1d2(x).unsqueeze(2).unsqueeze(3)                        #att size : [bs, n_ker, 1, 1, freqs]
-
-        return F.softmax(att / self.temperature, 1)
-
-
-
 ########################################################################################################################
 #                                                Squeeze and Excitation                                                #
 ########################################################################################################################
@@ -227,11 +111,6 @@ class light_FDY_CNN(nn.Module):
                  nb_filters=[64, 64, 64],
                  pooling=[(1, 4), (1, 4), (1, 4)],
                  normalization="batch",
-                 DY_layers=[0, 0, 0, 0, 0, 0, 0],
-                 n_basis_kernels=4,
-                 temperature=31,
-                 dy_reduction=4,
-                 pool_dim='freq',
                  SE_layers=[0, 0, 0, 0, 0, 0, 0],
                  se_reduction=16,
                  attend_dim='chan',
@@ -249,16 +128,7 @@ class light_FDY_CNN(nn.Module):
             in_dim = n_input_ch if i == 0 else nb_filters[i - 1]
             out_dim = nb_filters[i]
             # convolution
-            if DY_layers[i] == 1:
-                if isinstance(n_basis_kernels, int):
-                    n_bk = n_basis_kernels
-                elif isinstance(n_basis_kernels, list):
-                    n_bk = n_basis_kernels[i]
-                cnn.add_module("conv{0}".format(i), Dynamic_conv2d(in_dim, out_dim, kernel[i], stride[i], pad[i],
-                                                                   n_basis_kernels=n_bk, temperature=temperature,
-                                                                   pool_dim=pool_dim, reduction=dy_reduction,))
-            else:
-                cnn.add_module("conv{0}".format(i), nn.Conv2d(in_dim, out_dim, kernel[i], stride[i], pad[i]))
+            cnn.add_module("conv{0}".format(i), nn.Conv2d(in_dim, out_dim, kernel[i], stride[i], pad[i]))
             # normalization
             if normalization == "batch":
                 cnn.add_module("batchnorm{0}".format(i), nn.BatchNorm2d(out_dim, eps=0.001, momentum=0.99))

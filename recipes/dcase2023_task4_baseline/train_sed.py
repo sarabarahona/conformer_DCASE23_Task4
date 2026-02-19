@@ -18,7 +18,6 @@ from desed_task.nnet.CRNN import CRNN
 from desed_task.nnet.attention_models import AttModel
 from desed_task.utils.encoder import ManyHotEncoder
 from desed_task.utils.schedulers import ExponentialWarmup
-
 from local.classes_dict import classes_labels
 from local.sed_trainer import SEDTask4
 from local.sed_trainer_att import SEDTask4_att
@@ -121,10 +120,14 @@ def single_run(
         sed_student = CRNN(**config["net"])
         trainerTask = SEDTask4
     else:
-        sed_student = AttModel(n_class=config["model"]["nclass"], 
-                            cnn_kwargs=config["model"]["cnn"], 
-                            encoder_kwargs=config["model"]["encoder"],
-                            cnn_type=config["model"]["cnn_type"],)
+        sed_student = AttModel(n_class=config["model"]["nclass"],
+                               cnn_type=config["model"]["cnn_type"], 
+                               cnn_kwargs=config["model"]["cnn"], 
+                               dim_freq=config["model"]["dim_freq"], 
+                               encoder_type=config["model"]["encoder_type"],
+                               encoder_kwargs=config["model"]["encoder"],
+                               pooling=config["model"]["pooling"],
+                            )
         trainerTask = SEDTask4_att
 
     # calulate multiply–accumulate operation (MACs) 

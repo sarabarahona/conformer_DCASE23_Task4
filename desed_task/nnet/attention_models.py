@@ -1,8 +1,9 @@
 import torch
 import warnings
+import pdb
 
 
-from .baseline_model import FDY_CNN, CNN
+from .fdyCNN import FDY_CNN, CNN
 from .light_fdyCNN import light_FDY_CNN 
 from .conformer.conformer_encoder import ConformerEncoder, ConformerEncoderEff
 from .transformer.encoder import Encoder as TransformerEncoder
@@ -12,13 +13,13 @@ class AttModel(torch.nn.Module):
     def __init__(
         self,
         n_class,
+        cnn_type="cnn",
         cnn_kwargs=None,
-        encoder_kwargs=None,
+        dim_freq=1,
         encoder_type="Conformer",
+        encoder_kwargs=None,
         pooling="token",
         layer_init="pytorch",
-        cnn_type="cnn",
-        dim_freq=1,
         use_embeddings=False,
         embedding_size=527,
         embedding_type="global",
